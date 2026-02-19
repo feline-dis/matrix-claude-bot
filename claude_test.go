@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"testing"
@@ -207,5 +208,146 @@ func TestGetClaudeResponse_NoSystemPrompt(t *testing.T) {
 	params := claude.capturedParams[0]
 	if len(params.System) != 0 {
 		t.Fatalf("expected no system prompt, got %d blocks", len(params.System))
+	}
+}
+
+// --- Tool use loop tests ---
+
+func TestGetClaudeResponse_ToolUseLoop(t *testing.T) {
+	matrix := &mockMatrixClient{}
+	callCount := 0
+	claude := &mockClaudeMessenger{
+		newMessageFunc: func(ctx context.Context, params anthropic.MessageNewParams) (*anthropic.Message, error) {
+			callCount++
+			if callCount == 1 {
+				return makeToolUseResponse("tool_1", "echo", json.RawMessage(`{"text":"hi"}`)), nil
+			}
+			return makeClaudeResponse("final answer"), nil
+		},
+	}
+	bot := newTestBot(matrix, claude)
+	bot.tools.Register(&fakeTool{name: "echo", result: "echoed: hi"})
+
+	resp, err := bot.getClaudeResponse(context.Background(), "$thread1", "test tool use")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp != "final answer" {
+		t.Errorf("expected 'final answer', got %q", resp)
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 Claude API calls, got %d", callCount)
+	}
+
+	// Conversation should have: user, assistant(tool_use), user(tool_result), assistant(text)
+	msgs := bot.conversations.Get("$thread1")
+	if len(msgs) != 4 {
+		t.Fatalf("expected 4 messages in store, got %d", len(msgs))
+	}
+}
+
+func TestGetClaudeResponse_NoToolsPreservesExistingBehavior(t *testing.T) {
+	matrix := &mockMatrixClient{}
+	claude := &mockClaudeMessenger{}
+	bot := newTestBot(matrix, claude)
+	// tools registry is empty (no tools registered)
+
+	resp, err := bot.getClaudeResponse(context.Background(), "$thread1", "hello")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp != "mock response" {
+		t.Errorf("expected 'mock response', got %q", resp)
+	}
+	if len(claude.capturedParams) != 1 {
+		t.Errorf("expected 1 API call, got %d", len(claude.capturedParams))
+	}
+	if len(claude.capturedParams[0].Tools) != 0 {
+		t.Error("expected no tools in API call when registry is empty")
+	}
+}
+
+func TestGetClaudeResponse_ToolsIncludedInAPICall(t *testing.T) {
+	matrix := &mockMatrixClient{}
+	claude := &mockClaudeMessenger{}
+	bot := newTestBot(matrix, claude)
+	bot.tools.Register(&fakeTool{name: "my_tool", result: "ok"})
+
+	_, err := bot.getClaudeResponse(context.Background(), "$thread1", "hello")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(claude.capturedParams[0].Tools) != 1 {
+		t.Errorf("expected 1 tool definition, got %d", len(claude.capturedParams[0].Tools))
+	}
+}
+
+func TestGetClaudeResponse_MaxIterationsReached(t *testing.T) {
+	matrix := &mockMatrixClient{}
+	claude := &mockClaudeMessenger{
+		newMessageFunc: func(ctx context.Context, params anthropic.MessageNewParams) (*anthropic.Message, error) {
+			// Always return tool_use to force hitting the max iterations limit.
+			return makeToolUseResponse("tool_1", "echo", json.RawMessage(`{}`)), nil
+		},
+	}
+	bot := newTestBot(matrix, claude)
+	bot.config.MaxToolIterations = 3
+	bot.tools.Register(&fakeTool{name: "echo", result: "ok"})
+
+	resp, err := bot.getClaudeResponse(context.Background(), "$thread1", "loop forever")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp != "reached maximum tool use iterations" {
+		t.Errorf("expected max iterations message, got %q", resp)
+	}
+	if len(claude.capturedParams) != 3 {
+		t.Errorf("expected 3 API calls (max_iterations=3), got %d", len(claude.capturedParams))
+	}
+}
+
+func TestGetClaudeResponse_ToolExecutionError(t *testing.T) {
+	matrix := &mockMatrixClient{}
+	callCount := 0
+	claude := &mockClaudeMessenger{
+		newMessageFunc: func(ctx context.Context, params anthropic.MessageNewParams) (*anthropic.Message, error) {
+			callCount++
+			if callCount == 1 {
+				return makeToolUseResponse("tool_1", "failing", json.RawMessage(`{}`)), nil
+			}
+			return makeClaudeResponse("handled error"), nil
+		},
+	}
+	bot := newTestBot(matrix, claude)
+
+	// Register a tool that returns isError=true
+	bot.tools.Register(&fakeTool{name: "failing", result: "something went wrong"})
+
+	resp, err := bot.getClaudeResponse(context.Background(), "$thread1", "test error")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp != "handled error" {
+		t.Errorf("expected 'handled error', got %q", resp)
+	}
+}
+
+func TestExtractText(t *testing.T) {
+	blocks := []anthropic.ContentBlockUnion{
+		{Type: "thinking", Thinking: "hmm"},
+		{Type: "text", Text: "hello"},
+		{Type: "tool_use", Name: "some_tool"},
+		{Type: "text", Text: "world"},
+	}
+	result := extractText(blocks)
+	if result != "hello\nworld" {
+		t.Errorf("expected 'hello\\nworld', got %q", result)
+	}
+}
+
+func TestExtractText_Empty(t *testing.T) {
+	result := extractText(nil)
+	if result != "" {
+		t.Errorf("expected empty string, got %q", result)
 	}
 }

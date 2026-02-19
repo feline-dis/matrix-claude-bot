@@ -16,6 +16,7 @@ type Bot struct {
 	claude        ClaudeMessenger
 	config        Config
 	conversations *ConversationStore
+	tools         *ToolRegistry
 	startTime     time.Time
 }
 

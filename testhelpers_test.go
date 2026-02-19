@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -68,12 +69,25 @@ func newTestBot(matrix *mockMatrixClient, claude *mockClaudeMessenger) *Bot {
 		matrix: matrix,
 		claude: claude,
 		config: Config{
-			UserID:    "@bot:example.com",
-			Model:     "claude-sonnet-4-20250514",
-			MaxTokens: 1024,
+			UserID:            "@bot:example.com",
+			Model:             "claude-sonnet-4-20250514",
+			MaxTokens:         1024,
+			MaxToolIterations: 10,
+			ToolTimeout:       5 * time.Second,
 		},
 		conversations: NewConversationStore(),
+		tools:         NewToolRegistry(),
 		startTime:     time.UnixMilli(1000),
+	}
+}
+
+func makeToolUseResponse(toolID, toolName string, input json.RawMessage) *anthropic.Message {
+	return &anthropic.Message{
+		Role: "assistant",
+		Content: []anthropic.ContentBlockUnion{
+			{Type: "tool_use", ID: toolID, Name: toolName, Input: input},
+		},
+		StopReason: anthropic.StopReasonToolUse,
 	}
 }
 

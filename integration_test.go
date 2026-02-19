@@ -104,6 +104,7 @@ func TestIntegration_FullFlow(t *testing.T) {
 		claude:        claudeClient,
 		config:        cfg,
 		conversations: NewConversationStore(),
+		tools:         NewToolRegistry(),
 		startTime:     time.Now(),
 	}
 
