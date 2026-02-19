@@ -1,0 +1,25 @@
+# Binary
+matrix-claude-bot
+
+# Config files with credentials
+config.yaml
+config.test.yaml
+config.local.yaml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test and coverage
+*.out
+coverage.html
+
+# Plans (local working docs)
+plans/
