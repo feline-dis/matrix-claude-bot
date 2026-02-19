@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
@@ -190,8 +191,34 @@ func TestGetClaudeResponse_WithSystemPrompt(t *testing.T) {
 	if len(params.System) == 0 {
 		t.Fatal("expected system prompt to be set")
 	}
+	// No tools registered, so prompt should be exactly the configured value.
 	if params.System[0].Text != "You are a helpful bot." {
 		t.Fatalf("unexpected system prompt: %q", params.System[0].Text)
+	}
+}
+
+func TestGetClaudeResponse_WithSystemPromptAndTools(t *testing.T) {
+	matrix := &mockMatrixClient{}
+	claude := &mockClaudeMessenger{}
+	bot := newTestBot(matrix, claude)
+	bot.config.SystemPrompt = "You are a helpful bot."
+	bot.tools.Register(&fakeTool{name: "my_tool", result: "ok"})
+
+	_, err := bot.getClaudeResponse(context.Background(), "$thread1", "hello")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	params := claude.capturedParams[0]
+	if len(params.System) == 0 {
+		t.Fatal("expected system prompt to be set")
+	}
+	prompt := params.System[0].Text
+	if !strings.HasPrefix(prompt, "You are a helpful bot.") {
+		t.Fatalf("system prompt should start with configured value, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "my_tool") {
+		t.Fatalf("system prompt should mention registered tool, got %q", prompt)
 	}
 }
 
@@ -207,7 +234,27 @@ func TestGetClaudeResponse_NoSystemPrompt(t *testing.T) {
 
 	params := claude.capturedParams[0]
 	if len(params.System) != 0 {
-		t.Fatalf("expected no system prompt, got %d blocks", len(params.System))
+		t.Fatalf("expected no system prompt when no config and no tools, got %d blocks", len(params.System))
+	}
+}
+
+func TestGetClaudeResponse_NoSystemPromptWithTools(t *testing.T) {
+	matrix := &mockMatrixClient{}
+	claude := &mockClaudeMessenger{}
+	bot := newTestBot(matrix, claude)
+	bot.tools.Register(&fakeTool{name: "my_tool", result: "ok"})
+
+	_, err := bot.getClaudeResponse(context.Background(), "$thread1", "hello")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	params := claude.capturedParams[0]
+	if len(params.System) == 0 {
+		t.Fatal("expected system prompt with tool capabilities even without configured prompt")
+	}
+	if !strings.Contains(params.System[0].Text, "my_tool") {
+		t.Fatalf("system prompt should mention registered tool, got %q", params.System[0].Text)
 	}
 }
 
@@ -349,5 +396,80 @@ func TestExtractText_Empty(t *testing.T) {
 	result := extractText(nil)
 	if result != "" {
 		t.Errorf("expected empty string, got %q", result)
+	}
+}
+
+// --- toolCapabilitiesPrompt tests ---
+
+func TestToolCapabilitiesPrompt_NoTools(t *testing.T) {
+	bot := newTestBot(&mockMatrixClient{}, &mockClaudeMessenger{})
+	if got := bot.toolCapabilitiesPrompt(); got != "" {
+		t.Errorf("expected empty string for no tools, got %q", got)
+	}
+}
+
+func TestToolCapabilitiesPrompt_NilRegistry(t *testing.T) {
+	bot := newTestBot(&mockMatrixClient{}, &mockClaudeMessenger{})
+	bot.tools = nil
+	if got := bot.toolCapabilitiesPrompt(); got != "" {
+		t.Errorf("expected empty string for nil registry, got %q", got)
+	}
+}
+
+func TestToolCapabilitiesPrompt_WebSearch(t *testing.T) {
+	bot := newTestBot(&mockMatrixClient{}, &mockClaudeMessenger{})
+	bot.tools.AddServerTool(anthropic.ToolUnionParam{
+		OfWebSearchTool20250305: &anthropic.WebSearchTool20250305Param{},
+	})
+
+	got := bot.toolCapabilitiesPrompt()
+	if !strings.Contains(got, "Web search") {
+		t.Errorf("expected web search capability, got %q", got)
+	}
+}
+
+func TestToolCapabilitiesPrompt_Filesystem(t *testing.T) {
+	bot := newTestBot(&mockMatrixClient{}, &mockClaudeMessenger{})
+	bot.tools.Register(&fakeTool{name: "fs_read", result: "ok"})
+	bot.tools.Register(&fakeTool{name: "fs_write", result: "ok"})
+	bot.tools.Register(&fakeTool{name: "fs_list", result: "ok"})
+
+	got := bot.toolCapabilitiesPrompt()
+	if !strings.Contains(got, "Filesystem") {
+		t.Errorf("expected filesystem capability, got %q", got)
+	}
+	// All three fs_ tools should be deduplicated into one line.
+	if strings.Count(got, "Filesystem") != 1 {
+		t.Errorf("expected exactly one Filesystem line, got %q", got)
+	}
+}
+
+func TestToolCapabilitiesPrompt_CustomTool(t *testing.T) {
+	bot := newTestBot(&mockMatrixClient{}, &mockClaudeMessenger{})
+	bot.tools.Register(&fakeTool{name: "weather_lookup", result: "ok"})
+
+	got := bot.toolCapabilitiesPrompt()
+	if !strings.Contains(got, "weather_lookup") {
+		t.Errorf("expected custom tool name in output, got %q", got)
+	}
+}
+
+func TestToolCapabilitiesPrompt_AllTypes(t *testing.T) {
+	bot := newTestBot(&mockMatrixClient{}, &mockClaudeMessenger{})
+	bot.tools.AddServerTool(anthropic.ToolUnionParam{
+		OfWebSearchTool20250305: &anthropic.WebSearchTool20250305Param{},
+	})
+	bot.tools.Register(&fakeTool{name: "fs_read", result: "ok"})
+	bot.tools.Register(&fakeTool{name: "custom_tool", result: "ok"})
+
+	got := bot.toolCapabilitiesPrompt()
+	if !strings.Contains(got, "Web search") {
+		t.Errorf("expected web search capability, got %q", got)
+	}
+	if !strings.Contains(got, "Filesystem") {
+		t.Errorf("expected filesystem capability, got %q", got)
+	}
+	if !strings.Contains(got, "custom_tool") {
+		t.Errorf("expected custom tool name, got %q", got)
 	}
 }

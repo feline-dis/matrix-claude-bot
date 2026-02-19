@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -80,4 +81,23 @@ func (r *ToolRegistry) IsEmpty() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.localTools) == 0 && len(r.serverTools) == 0
+}
+
+// LocalToolNames returns a sorted list of all registered local tool names.
+func (r *ToolRegistry) LocalToolNames() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	names := make([]string, 0, len(r.localTools))
+	for name := range r.localTools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// HasServerTools reports whether any server-side tools are registered.
+func (r *ToolRegistry) HasServerTools() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.serverTools) > 0
 }

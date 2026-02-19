@@ -86,6 +86,52 @@ func TestToolRegistry_ExecuteUnknownTool(t *testing.T) {
 	}
 }
 
+func TestToolRegistry_LocalToolNames(t *testing.T) {
+	reg := NewToolRegistry()
+	if names := reg.LocalToolNames(); len(names) != 0 {
+		t.Errorf("expected empty names, got %v", names)
+	}
+
+	reg.Register(&fakeTool{name: "zebra", result: "ok"})
+	reg.Register(&fakeTool{name: "alpha", result: "ok"})
+	reg.Register(&fakeTool{name: "middle", result: "ok"})
+
+	names := reg.LocalToolNames()
+	if len(names) != 3 {
+		t.Fatalf("expected 3 names, got %d", len(names))
+	}
+	if names[0] != "alpha" || names[1] != "middle" || names[2] != "zebra" {
+		t.Errorf("expected sorted [alpha middle zebra], got %v", names)
+	}
+}
+
+func TestToolRegistry_HasServerTools(t *testing.T) {
+	reg := NewToolRegistry()
+	if reg.HasServerTools() {
+		t.Error("new registry should not have server tools")
+	}
+
+	reg.AddServerTool(anthropic.ToolUnionParam{
+		OfWebSearchTool20250305: &anthropic.WebSearchTool20250305Param{},
+	})
+	if !reg.HasServerTools() {
+		t.Error("expected HasServerTools=true after adding server tool")
+	}
+}
+
+func TestToolRegistry_LocalToolNamesExcludesServerTools(t *testing.T) {
+	reg := NewToolRegistry()
+	reg.Register(&fakeTool{name: "local1", result: "ok"})
+	reg.AddServerTool(anthropic.ToolUnionParam{
+		OfWebSearchTool20250305: &anthropic.WebSearchTool20250305Param{},
+	})
+
+	names := reg.LocalToolNames()
+	if len(names) != 1 || names[0] != "local1" {
+		t.Errorf("expected [local1], got %v", names)
+	}
+}
+
 func TestToolRegistry_Definitions(t *testing.T) {
 	reg := NewToolRegistry()
 	reg.Register(&fakeTool{name: "local1", result: "ok"})

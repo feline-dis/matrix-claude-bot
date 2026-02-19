@@ -48,6 +48,47 @@ func extractText(content []anthropic.ContentBlockUnion) string {
 	return strings.Join(parts, "\n")
 }
 
+// toolCapabilitiesPrompt generates a system prompt section describing the
+// tools currently available, built from the ToolRegistry so it stays in sync
+// with what is actually registered.
+func (b *Bot) toolCapabilitiesPrompt() string {
+	if b.tools == nil || b.tools.IsEmpty() {
+		return ""
+	}
+
+	var parts []string
+
+	if b.tools.HasServerTools() {
+		parts = append(parts, "- Web search: you can search the web for current information")
+	}
+
+	localNames := b.tools.LocalToolNames()
+	for _, name := range localNames {
+		switch {
+		case strings.HasPrefix(name, "fs_"):
+			parts = append(parts, "- Filesystem: you can read, write, and list files in a sandboxed directory")
+		default:
+			parts = append(parts, fmt.Sprintf("- %s", name))
+		}
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	// Deduplicate (e.g. multiple fs_ tools produce one line)
+	seen := make(map[string]bool)
+	var unique []string
+	for _, p := range parts {
+		if !seen[p] {
+			seen[p] = true
+			unique = append(unique, p)
+		}
+	}
+
+	return "\n\nYou have access to the following tools:\n" + strings.Join(unique, "\n")
+}
+
 func (b *Bot) getClaudeResponse(ctx context.Context, threadID id.EventID, userText string) (string, error) {
 	userMsg := anthropic.NewUserMessage(anthropic.NewTextBlock(userText))
 	b.conversations.Append(threadID, userMsg)
@@ -71,14 +112,29 @@ func (b *Bot) getClaudeResponse(ctx context.Context, threadID id.EventID, userTe
 			MaxTokens: b.config.MaxTokens,
 		}
 
-		if b.config.SystemPrompt != "" {
+		systemPrompt := b.config.SystemPrompt + b.toolCapabilitiesPrompt()
+		if systemPrompt != "" {
 			params.System = []anthropic.TextBlockParam{
-				{Text: b.config.SystemPrompt},
+				{Text: systemPrompt},
 			}
 		}
 
 		if hasTools {
-			params.Tools = b.tools.Definitions()
+			defs := b.tools.Definitions()
+			params.Tools = defs
+			if i == 0 {
+				names := make([]string, len(defs))
+				for j, d := range defs {
+					if d.OfTool != nil {
+						names[j] = d.OfTool.Name
+					} else if d.OfWebSearchTool20250305 != nil {
+						names[j] = "web_search"
+					} else {
+						names[j] = "(unknown)"
+					}
+				}
+				log.Printf("Sending %d tool(s) to Claude: %v", len(defs), names)
+			}
 		}
 
 		resp, err := b.claude.NewMessage(ctx, params)
