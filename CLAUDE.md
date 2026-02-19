@@ -4,15 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A Matrix chat bot that responds to @-mentions using the Anthropic Claude API. When mentioned in a room, it sends the message to Claude and replies in a Matrix thread, maintaining per-thread conversation history in memory. Supports tool use including web search, sandboxed filesystem access, and MCP server integration.
+A Matrix chat bot that responds to @-mentions using the Anthropic Claude API. When mentioned in a room, it sends the message to Claude and replies in a Matrix thread, maintaining per-thread conversation history in memory. Supports tool use including web search, sandboxed filesystem access, and MCP server integration. Optionally supports E2EE via mautrix-go's cryptohelper.
 
 ## Build and Run
 
 ```bash
-go build -o matrix-claude-bot .
+go build -tags goolm -o matrix-claude-bot .
 ./matrix-claude-bot -config path/to/config.yaml
-go test ./...
 ```
+
+The `goolm` build tag selects the pure-Go Olm implementation (no CGO/libolm required).
+
+Run tests with `go test -tags goolm ./...`. Integration tests (tagged `integration`) require a `config.test.yaml`.
 
 ## Configuration
 
@@ -32,17 +35,24 @@ Config is loaded via Viper from `config.yaml` (searched in `$XDG_CONFIG_HOME/mat
 | `tools.max_iterations`        | `TOOLS_MAX_ITERATIONS`     | No       |
 | `tools.timeout_seconds`       | `TOOLS_TIMEOUT_SECONDS`    | No       |
 | `tools.mcp_servers`           | (YAML only)                | No       |
+| `crypto.pickle_key`           | `CRYPTO_PICKLE_KEY`        | No       |
+| `crypto.database_path`        | `CRYPTO_DATABASE_PATH`     | No       |
 
 The Anthropic SDK reads its API key from the `ANTHROPIC_API_KEY` env var, which is set programmatically from the config in `main.go:loadConfig`.
+
+### E2EE (End-to-End Encryption)
+
+E2EE is opt-in. Set `crypto.pickle_key` to enable it. When set, the bot uses mautrix-go's `cryptohelper` package with a pure-Go SQLite backend (`modernc.org/sqlite`) to handle Olm/Megolm session management transparently. The crypto state is stored in a SQLite database at `crypto.database_path` (default: `matrix-claude-bot.db`). Without a pickle key, the bot works in unencrypted rooms only, exactly as before.
 
 ## Architecture
 
 All code is in package `main`:
 
-- **main.go** -- Entrypoint. Defines `Config` struct, loads config via Viper, creates Matrix + Claude clients, sets up tool registry, wires up the `Bot`, and runs the Matrix sync loop with graceful shutdown on SIGINT/SIGTERM.
+- **main.go** -- Entrypoint. Defines `Config` struct, loads config via Viper, creates Matrix + Claude clients, optionally initializes E2EE, sets up tool registry, wires up the `Bot`, and runs the Matrix sync loop with graceful shutdown on SIGINT/SIGTERM.
 - **bot.go** -- Matrix event handling. `Bot` struct holds both clients, config, conversation store, tool registry, and start time. Registers handlers for message events (responds to mentions) and member events (auto-joins on invite). Messages are dispatched to goroutines. Replies are sent as Matrix threads.
 - **claude.go** -- Claude API interaction and conversation state. `ConversationStore` is a thread-safe in-memory map keyed by Matrix thread root event ID. `getClaudeResponse` implements a tool use loop: sends messages to Claude, executes local tools when Claude returns `tool_use` stop reason, and loops until Claude returns text or max iterations is reached.
 - **interfaces.go** -- `MatrixClient` and `ClaudeMessenger` interfaces for testability.
+- **crypto.go** -- E2EE setup. `setupCrypto` creates a `cryptohelper.CryptoHelper` with a pure-Go SQLite database and attaches it to the Matrix client. `openCryptoDatabase` opens the SQLite DB with appropriate pragmas.
 - **tools.go** -- `Tool` interface and `ToolRegistry` for managing local and server-side tools.
 - **tool_filesystem.go** -- Sandboxed filesystem tools (`fs_read`, `fs_write`, `fs_list`) operating within a configured directory.
 - **tool_mcp.go** -- MCP client manager for connecting to external MCP servers and exposing their tools to Claude.
@@ -59,7 +69,8 @@ Server-side tools (web search) produce `server_tool_use` / `web_search_tool_resu
 
 ## Key Dependencies
 
-- `maunium.net/go/mautrix` -- Matrix client SDK (mautrix-go)
+- `maunium.net/go/mautrix` -- Matrix client SDK (mautrix-go), including `crypto/cryptohelper` for E2EE
 - `github.com/anthropics/anthropic-sdk-go` -- Anthropic Claude SDK
 - `github.com/spf13/viper` -- Configuration management
 - `github.com/modelcontextprotocol/go-sdk` -- MCP client SDK
+- `modernc.org/sqlite` -- Pure-Go SQLite driver (no CGO required)
