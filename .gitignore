@@ -1,6 +1,11 @@
 # Binary
 matrix-claude-bot
 
+# SQLite crypto state
+*.db
+*.db-wal
+*.db-shm
+
 # Config files with credentials
 config.yaml
 config.test.yaml

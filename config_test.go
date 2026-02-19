@@ -103,3 +103,40 @@ func TestLoadConfig_MissingAPIKey(t *testing.T) {
 		t.Fatal("expected error for missing API key")
 	}
 }
+
+func TestLoadConfig_CryptoFields(t *testing.T) {
+	setupConfigTest(t)
+	setRequiredViperKeys()
+	viper.Set("crypto.pickle_key", "test-pickle-key")
+	viper.Set("crypto.database_path", "/tmp/test.db")
+
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.PickleKey != "test-pickle-key" {
+		t.Errorf("wrong pickle key: %s", cfg.PickleKey)
+	}
+	if cfg.CryptoDatabasePath != "/tmp/test.db" {
+		t.Errorf("wrong database path: %s", cfg.CryptoDatabasePath)
+	}
+}
+
+func TestLoadConfig_CryptoDefaults(t *testing.T) {
+	setupConfigTest(t)
+	setRequiredViperKeys()
+	viper.SetDefault("crypto.database_path", "matrix-claude-bot.db")
+
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.PickleKey != "" {
+		t.Errorf("expected empty pickle key by default, got %q", cfg.PickleKey)
+	}
+	if cfg.CryptoDatabasePath != "matrix-claude-bot.db" {
+		t.Errorf("expected default database path, got %q", cfg.CryptoDatabasePath)
+	}
+}

@@ -18,12 +18,14 @@ import (
 )
 
 type Config struct {
-	HomeserverURL string
-	UserID        id.UserID
-	AccessToken   string
-	Model         string
-	MaxTokens     int64
-	SystemPrompt  string
+	HomeserverURL      string
+	UserID             id.UserID
+	AccessToken        string
+	Model              string
+	MaxTokens          int64
+	SystemPrompt       string
+	PickleKey          string
+	CryptoDatabasePath string
 }
 
 var configFile string
@@ -52,8 +54,12 @@ func initConfig() {
 	viper.BindEnv("claude.max_tokens", "CLAUDE_MAX_TOKENS")
 	viper.BindEnv("claude.system_prompt", "CLAUDE_SYSTEM_PROMPT")
 
+	viper.BindEnv("crypto.pickle_key", "CRYPTO_PICKLE_KEY")
+	viper.BindEnv("crypto.database_path", "CRYPTO_DATABASE_PATH")
+
 	viper.SetDefault("claude.model", "claude-sonnet-4-20250514")
 	viper.SetDefault("claude.max_tokens", 4096)
+	viper.SetDefault("crypto.database_path", "matrix-claude-bot.db")
 
 	if err := viper.ReadInConfig(); err != nil {
 		var notFound viper.ConfigFileNotFoundError
@@ -77,12 +83,14 @@ func loadConfig() (Config, error) {
 	os.Setenv("ANTHROPIC_API_KEY", apiKey)
 
 	return Config{
-		HomeserverURL: homeserverURL,
-		UserID:        id.UserID(userID),
-		AccessToken:   accessToken,
-		Model:         viper.GetString("claude.model"),
-		MaxTokens:     viper.GetInt64("claude.max_tokens"),
-		SystemPrompt:  viper.GetString("claude.system_prompt"),
+		HomeserverURL:      homeserverURL,
+		UserID:             id.UserID(userID),
+		AccessToken:        accessToken,
+		Model:              viper.GetString("claude.model"),
+		MaxTokens:          viper.GetInt64("claude.max_tokens"),
+		SystemPrompt:       viper.GetString("claude.system_prompt"),
+		PickleKey:          viper.GetString("crypto.pickle_key"),
+		CryptoDatabasePath: viper.GetString("crypto.database_path"),
 	}, nil
 }
 
@@ -98,6 +106,23 @@ func main() {
 		log.Fatalf("Failed to create Matrix client: %v", err)
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	if cfg.PickleKey != "" {
+		whoami, err := matrixClient.Whoami(ctx)
+		if err != nil {
+			log.Fatalf("Failed to identify device: %v", err)
+		}
+		matrixClient.DeviceID = whoami.DeviceID
+
+		cryptoHelper, err := setupCrypto(ctx, matrixClient, cfg)
+		if err != nil {
+			log.Fatalf("Failed to setup E2EE: %v", err)
+		}
+		defer cryptoHelper.Close()
+	}
+
 	bot := &Bot{
 		matrix:        matrixClient,
 		claude:        &claudeAdapter{client: anthropic.NewClient()},
@@ -107,9 +132,6 @@ func main() {
 	}
 
 	RegisterHandlers(matrixClient, bot)
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	log.Printf("Bot started as %s", cfg.UserID)
 

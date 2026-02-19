@@ -16,8 +16,10 @@ A Matrix chat bot that responds to @-mentions using the Anthropic Claude API. Re
 ```bash
 git clone https://github.com/feline-dis/matrix-claude-bot.git
 cd matrix-claude-bot
-go build -o matrix-claude-bot .
+go build -tags goolm -o matrix-claude-bot .
 ```
+
+The `goolm` build tag selects the pure-Go Olm implementation for E2EE support (no CGO or libolm required).
 
 ## Configuration
 
@@ -40,6 +42,11 @@ claude:
   model: "claude-sonnet-4-20250514"
   max_tokens: 4096
   system_prompt: "You are a helpful assistant."
+
+# Optional: enable E2EE support for encrypted rooms
+crypto:
+  pickle_key: "a-secret-key-to-encrypt-the-crypto-database"
+  database_path: "matrix-claude-bot.db"
 ```
 
 The bot searches for `config.yaml` in these locations:
@@ -66,6 +73,8 @@ All config values can be set or overridden with environment variables:
 | `claude.model`          | `CLAUDE_MODEL`         | No       | `claude-sonnet-4-20250514` |
 | `claude.max_tokens`     | `CLAUDE_MAX_TOKENS`    | No       | `4096`                     |
 | `claude.system_prompt`  | `CLAUDE_SYSTEM_PROMPT` | No       |                            |
+| `crypto.pickle_key`    | `CRYPTO_PICKLE_KEY`    | No       |                            |
+| `crypto.database_path` | `CRYPTO_DATABASE_PATH` | No       | `matrix-claude-bot.db`     |
 
 ## Usage
 
@@ -96,3 +105,15 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 - **Threaded replies**: Responses are sent as Matrix thread replies.
 - **Conversation history**: The bot maintains conversation context within each thread for multi-turn conversations. History is stored in memory and lost on restart.
 - **Graceful shutdown**: The bot stops cleanly on SIGINT or SIGTERM.
+
+### End-to-End Encryption (E2EE)
+
+E2EE is opt-in. To enable it, set `crypto.pickle_key` to any secret string. This activates mautrix-go's crypto helper, which transparently handles:
+
+- Decrypting incoming messages in encrypted rooms
+- Encrypting outgoing replies
+- Managing Olm/Megolm sessions and device keys
+
+Crypto state (sessions, device keys) is persisted in a SQLite database at `crypto.database_path` (default: `matrix-claude-bot.db`). The pickle key encrypts this database at rest.
+
+Without a pickle key configured, the bot works exactly as before in unencrypted rooms only.
