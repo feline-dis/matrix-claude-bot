@@ -1,4 +1,4 @@
-package main
+package bot
 
 import (
 	"context"
@@ -49,7 +49,7 @@ func extractText(content []anthropic.ContentBlockUnion) string {
 }
 
 // toolCapabilitiesPrompt generates a system prompt section describing the
-// tools currently available, built from the ToolRegistry so it stays in sync
+// tools currently available, built from the Registry so it stays in sync
 // with what is actually registered.
 func (b *Bot) toolCapabilitiesPrompt() string {
 	if b.tools == nil || b.tools.IsEmpty() {

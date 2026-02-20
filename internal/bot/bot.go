@@ -1,4 +1,4 @@
-package main
+package bot
 
 import (
 	"context"
@@ -9,27 +9,41 @@ import (
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+
+	"github.com/feline-dis/matrix-claude-bot/internal/config"
+	"github.com/feline-dis/matrix-claude-bot/internal/tools"
 )
 
 type Bot struct {
 	matrix        MatrixClient
 	claude        ClaudeMessenger
-	config        Config
+	config        config.Config
 	conversations *ConversationStore
-	tools         *ToolRegistry
+	tools         *tools.Registry
 	startTime     time.Time
 }
 
+func NewBot(matrix MatrixClient, claude ClaudeMessenger, cfg config.Config, reg *tools.Registry) *Bot {
+	return &Bot{
+		matrix:        matrix,
+		claude:        claude,
+		config:        cfg,
+		conversations: NewConversationStore(),
+		tools:         reg,
+		startTime:     time.Now(),
+	}
+}
+
 // RegisterHandlers needs the concrete *mautrix.Client for syncer type-assertion.
-func RegisterHandlers(matrixClient *mautrix.Client, bot *Bot) {
+func RegisterHandlers(matrixClient *mautrix.Client, b *Bot) {
 	syncer := matrixClient.Syncer.(*mautrix.DefaultSyncer)
 
 	syncer.OnEventType(event.EventMessage, func(ctx context.Context, evt *event.Event) {
-		go bot.handleMessage(ctx, evt)
+		go b.handleMessage(ctx, evt)
 	})
 
 	syncer.OnEventType(event.StateMember, func(ctx context.Context, evt *event.Event) {
-		bot.handleMemberEvent(ctx, evt)
+		b.handleMemberEvent(ctx, evt)
 	})
 }
 

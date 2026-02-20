@@ -1,4 +1,4 @@
-package main
+package bot
 
 import (
 	"context"
@@ -27,4 +27,9 @@ type claudeAdapter struct {
 
 func (a *claudeAdapter) NewMessage(ctx context.Context, params anthropic.MessageNewParams) (*anthropic.Message, error) {
 	return a.client.Messages.New(ctx, params)
+}
+
+// NewClaudeAdapter creates a ClaudeMessenger backed by the Anthropic SDK client.
+func NewClaudeAdapter() ClaudeMessenger {
+	return &claudeAdapter{client: anthropic.NewClient()}
 }

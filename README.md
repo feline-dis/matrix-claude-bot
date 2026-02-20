@@ -16,7 +16,7 @@ A Matrix chat bot that responds to @-mentions using the Anthropic Claude API. Re
 ```bash
 git clone https://github.com/feline-dis/matrix-claude-bot.git
 cd matrix-claude-bot
-go build -tags goolm -o matrix-claude-bot .
+go build -tags goolm -o matrix-claude-bot ./cmd/claude-bot
 ```
 
 The `goolm` build tag selects the pure-Go Olm implementation for E2EE support (no CGO or libolm required).

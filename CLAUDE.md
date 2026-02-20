@@ -9,7 +9,7 @@ A Matrix chat bot that responds to @-mentions using the Anthropic Claude API. Wh
 ## Build and Run
 
 ```bash
-go build -tags goolm -o matrix-claude-bot .
+go build -tags goolm -o matrix-claude-bot ./cmd/claude-bot
 ./matrix-claude-bot -config path/to/config.yaml
 ```
 
@@ -38,7 +38,7 @@ Config is loaded via Viper from `config.yaml` (searched in `$XDG_CONFIG_HOME/mat
 | `crypto.pickle_key`           | `CRYPTO_PICKLE_KEY`        | No       |
 | `crypto.database_path`        | `CRYPTO_DATABASE_PATH`     | No       |
 
-The Anthropic SDK reads its API key from the `ANTHROPIC_API_KEY` env var, which is set programmatically from the config in `main.go:loadConfig`.
+The Anthropic SDK reads its API key from the `ANTHROPIC_API_KEY` env var, which is set programmatically from the config in `config.LoadConfig()`.
 
 ### E2EE (End-to-End Encryption)
 
@@ -46,16 +46,22 @@ E2EE is opt-in. Set `crypto.pickle_key` to enable it. When set, the bot uses mau
 
 ## Architecture
 
-All code is in package `main`:
+The codebase follows `cmd/` + `internal/` layout with focused packages:
 
-- **main.go** -- Entrypoint. Defines `Config` struct, loads config via Viper, creates Matrix + Claude clients, optionally initializes E2EE, sets up tool registry, wires up the `Bot`, and runs the Matrix sync loop with graceful shutdown on SIGINT/SIGTERM.
-- **bot.go** -- Matrix event handling. `Bot` struct holds both clients, config, conversation store, tool registry, and start time. Registers handlers for message events (responds to mentions) and member events (auto-joins on invite). Messages are dispatched to goroutines. Replies are sent as Matrix threads.
-- **claude.go** -- Claude API interaction and conversation state. `ConversationStore` is a thread-safe in-memory map keyed by Matrix thread root event ID. `getClaudeResponse` implements a tool use loop: sends messages to Claude, executes local tools when Claude returns `tool_use` stop reason, and loops until Claude returns text or max iterations is reached.
-- **interfaces.go** -- `MatrixClient` and `ClaudeMessenger` interfaces for testability.
-- **crypto.go** -- E2EE setup. `setupCrypto` creates a `cryptohelper.CryptoHelper` with a pure-Go SQLite database and attaches it to the Matrix client. `openCryptoDatabase` opens the SQLite DB with appropriate pragmas.
-- **tools.go** -- `Tool` interface and `ToolRegistry` for managing local and server-side tools.
-- **tool_filesystem.go** -- Sandboxed filesystem tools (`fs_read`, `fs_write`, `fs_list`) operating within a configured directory.
-- **tool_mcp.go** -- MCP client manager for connecting to external MCP servers and exposing their tools to Claude.
+```
+cmd/claude-bot/main.go    -- Entrypoint: flags, viper init, wiring, sync loop
+internal/
+  config/config.go        -- Config and MCPServerConfig structs, LoadConfig()
+  bot/bot.go              -- Bot struct, NewBot(), RegisterHandlers(), message handling
+  bot/claude.go           -- ConversationStore, getClaudeResponse, tool capabilities prompt
+  bot/interfaces.go       -- MatrixClient and ClaudeMessenger interfaces, NewClaudeAdapter()
+  crypto/crypto.go        -- E2EE Setup() via mautrix cryptohelper
+  tools/tools.go          -- Tool interface and Registry for managing tools
+  tools/filesystem.go     -- Sandboxed filesystem tools (fs_read, fs_write, fs_list)
+  tools/mcp.go            -- MCPManager for connecting to external MCP servers
+```
+
+Dependency graph (no cycles): `config -> (external only)`, `tools -> config`, `crypto -> config`, `bot -> config + tools`, `main -> all`.
 
 ## Tool Use
 

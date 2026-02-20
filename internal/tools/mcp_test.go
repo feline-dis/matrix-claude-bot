@@ -1,8 +1,9 @@
-package main
+package tools
 
 import (
 	"testing"
 
+	"github.com/feline-dis/matrix-claude-bot/internal/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -102,7 +103,7 @@ func TestMcpTool_Definition(t *testing.T) {
 }
 
 func TestCreateTransport_Stdio(t *testing.T) {
-	cfg := MCPServerConfig{
+	cfg := config.MCPServerConfig{
 		Name:      "test",
 		Command:   "/usr/bin/echo",
 		Args:      []string{"hello"},
@@ -118,7 +119,7 @@ func TestCreateTransport_Stdio(t *testing.T) {
 }
 
 func TestCreateTransport_StdioMissingCommand(t *testing.T) {
-	cfg := MCPServerConfig{
+	cfg := config.MCPServerConfig{
 		Name:      "test",
 		Transport: "stdio",
 	}
@@ -129,7 +130,7 @@ func TestCreateTransport_StdioMissingCommand(t *testing.T) {
 }
 
 func TestCreateTransport_SSE(t *testing.T) {
-	cfg := MCPServerConfig{
+	cfg := config.MCPServerConfig{
 		Name:      "test",
 		URL:       "http://localhost:8080/sse",
 		Transport: "sse",
@@ -144,7 +145,7 @@ func TestCreateTransport_SSE(t *testing.T) {
 }
 
 func TestCreateTransport_SSEMissingURL(t *testing.T) {
-	cfg := MCPServerConfig{
+	cfg := config.MCPServerConfig{
 		Name:      "test",
 		Transport: "sse",
 	}
@@ -155,7 +156,7 @@ func TestCreateTransport_SSEMissingURL(t *testing.T) {
 }
 
 func TestCreateTransport_Streamable(t *testing.T) {
-	cfg := MCPServerConfig{
+	cfg := config.MCPServerConfig{
 		Name:      "test",
 		URL:       "http://localhost:8080/mcp",
 		Transport: "streamable",
@@ -170,7 +171,7 @@ func TestCreateTransport_Streamable(t *testing.T) {
 }
 
 func TestCreateTransport_Unknown(t *testing.T) {
-	cfg := MCPServerConfig{
+	cfg := config.MCPServerConfig{
 		Name:      "test",
 		Transport: "grpc",
 	}

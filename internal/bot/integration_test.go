@@ -1,6 +1,6 @@
 //go:build integration
 
-package main
+package bot
 
 import (
 	"context"
@@ -11,9 +11,12 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/spf13/viper"
 	"maunium.net/go/mautrix"
+
+	"github.com/feline-dis/matrix-claude-bot/internal/config"
+	"github.com/feline-dis/matrix-claude-bot/internal/tools"
 )
 
-func loadIntegrationConfig(t *testing.T) Config {
+func loadIntegrationConfig(t *testing.T) config.Config {
 	t.Helper()
 	viper.Reset()
 	viper.SetConfigFile("config.test.yaml")
@@ -23,12 +26,11 @@ func loadIntegrationConfig(t *testing.T) Config {
 	viper.SetDefault("claude.model", "claude-sonnet-4-20250514")
 	viper.SetDefault("claude.max_tokens", 4096)
 
-	cfg, err := loadConfig()
+	cfg, err := config.LoadConfig()
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Ensure homeserver URL has a scheme
 	if !strings.HasPrefix(cfg.HomeserverURL, "http://") && !strings.HasPrefix(cfg.HomeserverURL, "https://") {
 		cfg.HomeserverURL = "https://" + cfg.HomeserverURL
 	}
@@ -47,7 +49,6 @@ func TestIntegration_MatrixConnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// A short sync verifies credentials and connectivity
 	err = client.SyncWithContext(ctx)
 	if err != nil && ctx.Err() == nil {
 		t.Fatalf("Sync failed (not timeout): %v", err)
@@ -97,14 +98,14 @@ func TestIntegration_FullFlow(t *testing.T) {
 		t.Fatalf("Failed to create Matrix client: %v", err)
 	}
 
-	claudeClient := &claudeAdapter{client: anthropic.NewClient()}
+	claudeClient := NewClaudeAdapter()
 
 	bot := &Bot{
 		matrix:        matrixClient,
 		claude:        claudeClient,
 		config:        cfg,
 		conversations: NewConversationStore(),
-		tools:         NewToolRegistry(),
+		tools:         tools.NewRegistry(),
 		startTime:     time.Now(),
 	}
 

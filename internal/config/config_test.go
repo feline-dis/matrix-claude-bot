@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"os"
@@ -32,7 +32,7 @@ func TestLoadConfig_AllFields(t *testing.T) {
 	viper.Set("claude.max_tokens", 2048)
 	viper.Set("claude.system_prompt", "Be helpful.")
 
-	cfg, err := loadConfig()
+	cfg, err := LoadConfig()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	viper.SetDefault("claude.model", "claude-sonnet-4-20250514")
 	viper.SetDefault("claude.max_tokens", 4096)
 
-	cfg, err := loadConfig()
+	cfg, err := LoadConfig()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -81,12 +81,11 @@ func TestLoadConfig_Defaults(t *testing.T) {
 
 func TestLoadConfig_MissingRequired(t *testing.T) {
 	setupConfigTest(t)
-	// Only set some required keys, omit homeserver_url
 	viper.Set("matrix.user_id", "@bot:example.com")
 	viper.Set("matrix.access_token", "syt_token")
 	viper.Set("anthropic.api_key", "sk-ant-test")
 
-	_, err := loadConfig()
+	_, err := LoadConfig()
 	if err == nil {
 		t.Fatal("expected error for missing homeserver_url")
 	}
@@ -98,7 +97,7 @@ func TestLoadConfig_MissingAPIKey(t *testing.T) {
 	viper.Set("matrix.user_id", "@bot:example.com")
 	viper.Set("matrix.access_token", "syt_token")
 
-	_, err := loadConfig()
+	_, err := LoadConfig()
 	if err == nil {
 		t.Fatal("expected error for missing API key")
 	}
@@ -110,7 +109,7 @@ func TestLoadConfig_CryptoFields(t *testing.T) {
 	viper.Set("crypto.pickle_key", "test-pickle-key")
 	viper.Set("crypto.database_path", "/tmp/test.db")
 
-	cfg, err := loadConfig()
+	cfg, err := LoadConfig()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -128,7 +127,7 @@ func TestLoadConfig_CryptoDefaults(t *testing.T) {
 	setRequiredViperKeys()
 	viper.SetDefault("crypto.database_path", "matrix-claude-bot.db")
 
-	cfg, err := loadConfig()
+	cfg, err := LoadConfig()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

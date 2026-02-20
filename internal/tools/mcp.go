@@ -1,4 +1,4 @@
-package main
+package tools
 
 import (
 	"context"
@@ -10,17 +10,9 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-)
 
-// MCPServerConfig describes how to connect to an MCP server.
-type MCPServerConfig struct {
-	Name      string            `mapstructure:"name"`
-	Command   string            `mapstructure:"command"`
-	Args      []string          `mapstructure:"args"`
-	Env       map[string]string `mapstructure:"env"`
-	URL       string            `mapstructure:"url"`
-	Transport string            `mapstructure:"transport"` // "stdio", "sse", or "streamable"
-}
+	"github.com/feline-dis/matrix-claude-bot/internal/config"
+)
 
 type mcpConnection struct {
 	name    string
@@ -37,8 +29,8 @@ func NewMCPManager() *MCPManager {
 }
 
 // Connect establishes connections to the configured MCP servers, discovers
-// their tools, and registers them in the given ToolRegistry.
-func (m *MCPManager) Connect(ctx context.Context, servers []MCPServerConfig, registry *ToolRegistry) error {
+// their tools, and registers them in the given Registry.
+func (m *MCPManager) Connect(ctx context.Context, servers []config.MCPServerConfig, registry *Registry) error {
 	var errs []string
 
 	for _, serverCfg := range servers {
@@ -101,7 +93,7 @@ func (m *MCPManager) Close() {
 	}
 }
 
-func createTransport(cfg MCPServerConfig) (mcp.Transport, error) {
+func createTransport(cfg config.MCPServerConfig) (mcp.Transport, error) {
 	switch cfg.Transport {
 	case "stdio", "":
 		if cfg.Command == "" {

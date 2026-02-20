@@ -1,4 +1,4 @@
-package main
+package bot
 
 import (
 	"context"
@@ -9,6 +9,9 @@ import (
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+
+	"github.com/feline-dis/matrix-claude-bot/internal/config"
+	"github.com/feline-dis/matrix-claude-bot/internal/tools"
 )
 
 type mockMatrixClient struct {
@@ -68,7 +71,7 @@ func newTestBot(matrix *mockMatrixClient, claude *mockClaudeMessenger) *Bot {
 	return &Bot{
 		matrix: matrix,
 		claude: claude,
-		config: Config{
+		config: config.Config{
 			UserID:            "@bot:example.com",
 			Model:             "claude-sonnet-4-20250514",
 			MaxTokens:         1024,
@@ -76,7 +79,7 @@ func newTestBot(matrix *mockMatrixClient, claude *mockClaudeMessenger) *Bot {
 			ToolTimeout:       5 * time.Second,
 		},
 		conversations: NewConversationStore(),
-		tools:         NewToolRegistry(),
+		tools:         tools.NewRegistry(),
 		startTime:     time.UnixMilli(1000),
 	}
 }
@@ -118,4 +121,25 @@ func makeMemberEvent(sender id.UserID, roomID id.RoomID, stateKey string, member
 		StateKey: &sk,
 		Content:  event.Content{Parsed: member},
 	}
+}
+
+// fakeTool implements tools.Tool for testing within the bot package.
+type fakeTool struct {
+	name   string
+	result string
+}
+
+func (t *fakeTool) Name() string { return t.name }
+func (t *fakeTool) Definition() anthropic.ToolUnionParam {
+	return anthropic.ToolUnionParam{
+		OfTool: &anthropic.ToolParam{
+			Name: t.name,
+			InputSchema: anthropic.ToolInputSchemaParam{
+				Properties: map[string]any{},
+			},
+		},
+	}
+}
+func (t *fakeTool) Execute(ctx context.Context, input json.RawMessage) (string, bool, error) {
+	return t.result, false, nil
 }

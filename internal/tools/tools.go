@@ -1,4 +1,4 @@
-package main
+package tools
 
 import (
 	"context"
@@ -17,21 +17,21 @@ type Tool interface {
 	Execute(ctx context.Context, input json.RawMessage) (result string, isError bool, err error)
 }
 
-// ToolRegistry holds both locally-executed tools and server-side tool
+// Registry holds both locally-executed tools and server-side tool
 // definitions (like web search) that the Anthropic API handles.
-type ToolRegistry struct {
+type Registry struct {
 	mu          sync.RWMutex
 	localTools  map[string]Tool
 	serverTools []anthropic.ToolUnionParam
 }
 
-func NewToolRegistry() *ToolRegistry {
-	return &ToolRegistry{
+func NewRegistry() *Registry {
+	return &Registry{
 		localTools: make(map[string]Tool),
 	}
 }
 
-func (r *ToolRegistry) Register(t Tool) {
+func (r *Registry) Register(t Tool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.localTools[t.Name()] = t
@@ -39,14 +39,14 @@ func (r *ToolRegistry) Register(t Tool) {
 
 // AddServerTool adds a server-side tool definition (e.g. web search) that the
 // Anthropic API executes. These are included in API requests but not executed locally.
-func (r *ToolRegistry) AddServerTool(t anthropic.ToolUnionParam) {
+func (r *Registry) AddServerTool(t anthropic.ToolUnionParam) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.serverTools = append(r.serverTools, t)
 }
 
 // Definitions returns all tool definitions for inclusion in API requests.
-func (r *ToolRegistry) Definitions() []anthropic.ToolUnionParam {
+func (r *Registry) Definitions() []anthropic.ToolUnionParam {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -59,7 +59,7 @@ func (r *ToolRegistry) Definitions() []anthropic.ToolUnionParam {
 }
 
 // Execute runs a locally-registered tool by name.
-func (r *ToolRegistry) Execute(ctx context.Context, name string, input json.RawMessage) (string, bool, error) {
+func (r *Registry) Execute(ctx context.Context, name string, input json.RawMessage) (string, bool, error) {
 	r.mu.RLock()
 	t, ok := r.localTools[name]
 	r.mu.RUnlock()
@@ -70,21 +70,21 @@ func (r *ToolRegistry) Execute(ctx context.Context, name string, input json.RawM
 	return t.Execute(ctx, input)
 }
 
-func (r *ToolRegistry) HasLocalTool(name string) bool {
+func (r *Registry) HasLocalTool(name string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	_, ok := r.localTools[name]
 	return ok
 }
 
-func (r *ToolRegistry) IsEmpty() bool {
+func (r *Registry) IsEmpty() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.localTools) == 0 && len(r.serverTools) == 0
 }
 
 // LocalToolNames returns a sorted list of all registered local tool names.
-func (r *ToolRegistry) LocalToolNames() []string {
+func (r *Registry) LocalToolNames() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	names := make([]string, 0, len(r.localTools))
@@ -96,7 +96,7 @@ func (r *ToolRegistry) LocalToolNames() []string {
 }
 
 // HasServerTools reports whether any server-side tools are registered.
-func (r *ToolRegistry) HasServerTools() bool {
+func (r *Registry) HasServerTools() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.serverTools) > 0

@@ -41,7 +41,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           binary="matrix-claude-bot-${GOOS}-${GOARCH}"
-          go build -tags goolm -ldflags="-s -w" -o "${binary}" .
+          go build -tags goolm -ldflags="-s -w" -o "${binary}" ./cmd/claude-bot
 
       - uses: actions/upload-artifact@v4
         with:

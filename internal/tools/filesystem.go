@@ -1,4 +1,4 @@
-package main
+package tools
 
 import (
 	"context"
@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	maxFileReadSize  = 1 << 20 // 1 MB
-	maxListEntries   = 200
+	maxFileReadSize = 1 << 20 // 1 MB
+	maxListEntries  = 200
 )
 
 // resolveSandboxedPath resolves the given path within sandboxDir, following

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -14,24 +13,12 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/spf13/viper"
 	"maunium.net/go/mautrix"
-	"maunium.net/go/mautrix/id"
-)
 
-type Config struct {
-	HomeserverURL      string
-	UserID             id.UserID
-	AccessToken        string
-	Model              string
-	MaxTokens          int64
-	SystemPrompt       string
-	WebSearchEnabled   bool
-	SandboxDir         string
-	MaxToolIterations  int
-	ToolTimeout        time.Duration
-	MCPServers         []MCPServerConfig
-	PickleKey          string
-	CryptoDatabasePath string
-}
+	"github.com/feline-dis/matrix-claude-bot/internal/bot"
+	"github.com/feline-dis/matrix-claude-bot/internal/config"
+	"github.com/feline-dis/matrix-claude-bot/internal/crypto"
+	"github.com/feline-dis/matrix-claude-bot/internal/tools"
+)
 
 var configFile string
 
@@ -80,44 +67,9 @@ func initConfig() {
 	}
 }
 
-func loadConfig() (Config, error) {
-	homeserverURL := viper.GetString("matrix.homeserver_url")
-	userID := viper.GetString("matrix.user_id")
-	accessToken := viper.GetString("matrix.access_token")
-	apiKey := viper.GetString("anthropic.api_key")
-
-	if homeserverURL == "" || userID == "" || accessToken == "" || apiKey == "" {
-		return Config{}, fmt.Errorf("required config: matrix.homeserver_url, matrix.user_id, matrix.access_token, anthropic.api_key")
-	}
-
-	// The Anthropic SDK reads the API key from the environment.
-	os.Setenv("ANTHROPIC_API_KEY", apiKey)
-
-	timeoutSec := viper.GetInt("tools.timeout_seconds")
-
-	var mcpServers []MCPServerConfig
-	viper.UnmarshalKey("tools.mcp_servers", &mcpServers)
-
-	return Config{
-		HomeserverURL:      homeserverURL,
-		UserID:             id.UserID(userID),
-		AccessToken:        accessToken,
-		Model:              viper.GetString("claude.model"),
-		MaxTokens:          viper.GetInt64("claude.max_tokens"),
-		SystemPrompt:       viper.GetString("claude.system_prompt"),
-		WebSearchEnabled:   viper.GetBool("tools.web_search_enabled"),
-		SandboxDir:         viper.GetString("tools.sandbox_dir"),
-		MaxToolIterations:  viper.GetInt("tools.max_iterations"),
-		ToolTimeout:        time.Duration(timeoutSec) * time.Second,
-		MCPServers:         mcpServers,
-		PickleKey:          viper.GetString("crypto.pickle_key"),
-		CryptoDatabasePath: viper.GetString("crypto.database_path"),
-	}, nil
-}
-
 func main() {
 	initConfig()
-	cfg, err := loadConfig()
+	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -137,17 +89,17 @@ func main() {
 		}
 		matrixClient.DeviceID = whoami.DeviceID
 
-		cryptoHelper, err := setupCrypto(ctx, matrixClient, cfg)
+		cryptoHelper, err := crypto.Setup(ctx, matrixClient, cfg)
 		if err != nil {
 			log.Fatalf("Failed to setup E2EE: %v", err)
 		}
 		defer cryptoHelper.Close()
 	}
 
-	tools := NewToolRegistry()
+	reg := tools.NewRegistry()
 
 	if cfg.WebSearchEnabled {
-		tools.AddServerTool(anthropic.ToolUnionParam{
+		reg.AddServerTool(anthropic.ToolUnionParam{
 			OfWebSearchTool20250305: &anthropic.WebSearchTool20250305Param{},
 		})
 		log.Println("Web search tool enabled")
@@ -157,32 +109,24 @@ func main() {
 		if err := os.MkdirAll(cfg.SandboxDir, 0o755); err != nil {
 			log.Fatalf("Failed to create sandbox directory %s: %v", cfg.SandboxDir, err)
 		}
-		for _, t := range NewFilesystemTools(cfg.SandboxDir) {
-			tools.Register(t)
+		for _, t := range tools.NewFilesystemTools(cfg.SandboxDir) {
+			reg.Register(t)
 		}
 		log.Printf("Filesystem tools enabled (sandbox: %s)", cfg.SandboxDir)
 	}
 
-	var mcpManager *MCPManager
+	var mcpManager *tools.MCPManager
 	if len(cfg.MCPServers) > 0 {
-		mcpManager = NewMCPManager()
+		mcpManager = tools.NewMCPManager()
 		connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		if err := mcpManager.Connect(connectCtx, cfg.MCPServers, tools); err != nil {
+		if err := mcpManager.Connect(connectCtx, cfg.MCPServers, reg); err != nil {
 			log.Printf("Warning: MCP connection error: %v", err)
 		}
 		cancel()
 	}
 
-	bot := &Bot{
-		matrix:        matrixClient,
-		claude:        &claudeAdapter{client: anthropic.NewClient()},
-		config:        cfg,
-		conversations: NewConversationStore(),
-		tools:         tools,
-		startTime:     time.Now(),
-	}
-
-	RegisterHandlers(matrixClient, bot)
+	b := bot.NewBot(matrixClient, bot.NewClaudeAdapter(), cfg, reg)
+	bot.RegisterHandlers(matrixClient, b)
 
 	log.Printf("Bot started as %s", cfg.UserID)
 
