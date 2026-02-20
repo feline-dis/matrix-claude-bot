@@ -28,3 +28,7 @@ coverage.html
 
 # Plans (local working docs)
 plans/
+
+result/
+
+worktrees/
